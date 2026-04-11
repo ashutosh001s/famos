@@ -1,20 +1,30 @@
 from flask import Blueprint, request, jsonify
 from app import db
 from app.models import Grocery, User
-from flask_jwt_extended import jwt_required, get_jwt_identity
-import json
+from app.routes.auth import get_current_user
+from flask_jwt_extended import jwt_required
 
 groceries_bp = Blueprint('groceries', __name__)
 
-def _user_name(user_id):
-    u = User.query.get(user_id)
-    return u.name if u else 'Unknown'
+
+def _build_user_map(items):
+    """Fetch all referenced user names in a single DB query (avoids N+1)."""
+    user_ids = {i.added_by for i in items if i.added_by}
+    if not user_ids:
+        return {}
+    return {u.id: u.name for u in User.query.filter(User.id.in_(user_ids)).all()}
+
 
 @groceries_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_groceries():
-    current_user = json.loads(get_jwt_identity())
-    items = Grocery.query.filter_by(family_id=current_user['family_id']).order_by(Grocery.id.desc()).all()
+    user = get_current_user()
+    if not user or not user.family_id:
+        return jsonify([]), 200
+
+    items = Grocery.query.filter_by(family_id=user.family_id).order_by(Grocery.id.desc()).all()
+    user_map = _build_user_map(items)
+
     return jsonify([{
         'id': g.id,
         'name': g.name,
@@ -22,15 +32,18 @@ def get_groceries():
         'category': g.category,
         'status': g.status,
         'added_by': g.added_by,
-        'added_by_name': _user_name(g.added_by) if g.added_by else None,
+        'added_by_name': user_map.get(g.added_by),
     } for g in items]), 200
+
 
 @groceries_bp.route('/', methods=['POST'])
 @jwt_required()
 def add_grocery():
-    current_user = json.loads(get_jwt_identity())
-    data = request.get_json()
+    user = get_current_user()
+    if not user or not user.family_id:
+        return jsonify({'message': 'You must be in a family to add groceries'}), 403
 
+    data = request.get_json()
     if not data or not data.get('name'):
         return jsonify({'message': 'Item name is required'}), 400
 
@@ -41,8 +54,8 @@ def add_grocery():
         quantity = 1
 
     item = Grocery(
-        family_id=current_user['family_id'],
-        added_by=current_user['id'],
+        family_id=user.family_id,
+        added_by=user.id,
         name=data.get('name').strip(),
         quantity=quantity,
         category=data.get('category', 'Other')
@@ -51,24 +64,34 @@ def add_grocery():
     db.session.commit()
     return jsonify({'message': 'Item added', 'id': item.id}), 201
 
+
 @groceries_bp.route('/<int:item_id>', methods=['PATCH'])
 @jwt_required()
 def update_grocery(item_id):
-    current_user = json.loads(get_jwt_identity())
-    item = Grocery.query.filter_by(id=item_id, family_id=current_user['family_id']).first()
+    user = get_current_user()
+    item = Grocery.query.filter_by(id=item_id, family_id=user.family_id).first()
     if not item:
         return jsonify({'message': 'Item not found'}), 404
-    data = request.get_json()
-    if 'status' in data: item.status = data['status']
-    if 'quantity' in data: item.quantity = max(1, int(data['quantity']))
+
+    data = request.get_json() or {}  # Fixed: guard against None body
+
+    if 'status' in data:
+        item.status = data['status']
+    if 'quantity' in data:
+        try:
+            item.quantity = max(1, int(data['quantity']))
+        except (TypeError, ValueError):
+            pass
+
     db.session.commit()
     return jsonify({'message': 'Item updated'}), 200
+
 
 @groceries_bp.route('/<int:item_id>', methods=['DELETE'])
 @jwt_required()
 def delete_grocery(item_id):
-    current_user = json.loads(get_jwt_identity())
-    item = Grocery.query.filter_by(id=item_id, family_id=current_user['family_id']).first()
+    user = get_current_user()
+    item = Grocery.query.filter_by(id=item_id, family_id=user.family_id).first()
     if not item:
         return jsonify({'message': 'Item not found'}), 404
     db.session.delete(item)

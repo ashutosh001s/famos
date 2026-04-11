@@ -1,0 +1,17 @@
+{
+  "family_name": "Personal Core",
+  "users": [
+    {
+      "id": 1,
+      "phone_hash": "a1b2c3",
+      "name": "Admin User",
+      "role": "admin"
+    },
+    {
+      "id": 2,
+      "phone_hash": "x9y8z7",
+      "name": "Guest User",
+      "role": "member"
+    }
+  ]
+}

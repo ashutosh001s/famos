@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify
 from app import db
 from app.models import PasswordVault
-from flask_jwt_extended import jwt_required, get_jwt_identity
-import json
+from app.routes.auth import get_current_user
+from flask_jwt_extended import jwt_required
 from cryptography.fernet import Fernet
 import os
 
@@ -14,42 +14,57 @@ if not _vault_key:
     raise RuntimeError('VAULT_ENCRYPTION_KEY is not set. Add it to your .env file.')
 fernet = Fernet(_vault_key.encode())
 
+
 @passwords_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_passwords():
-    current_user = json.loads(get_jwt_identity())
-    vaults = PasswordVault.query.filter_by(user_id=current_user['id']).all()
-    
-    decrypted_vaults = []
-    for v in vaults:
-        try:
-            pwd = fernet.decrypt(v.encrypted_password.encode()).decode()
-        except Exception:
-            pwd = "ERROR_DECRYPTING"
-            
-        decrypted_vaults.append({
-            'id': v.id,
-            'title': v.title,
-            'username': v.username,
-            'password': pwd,
-            'url': v.url,
-            'notes': v.notes
-        })
-    return jsonify(decrypted_vaults), 200
+    """Return vault entries WITHOUT decrypting passwords.
+    Passwords are returned as Fernet ciphertext — decryption happens client-side on reveal.
+    This prevents bulk plaintext exposure over the network."""
+    user = get_current_user()
+    vaults = PasswordVault.query.filter_by(user_id=user.id).all()
+
+    return jsonify([{
+        'id': v.id,
+        'title': v.title,
+        'username': v.username,
+        'encrypted_password': v.encrypted_password,  # ciphertext only — NOT decrypted
+        'url': v.url,
+        'notes': v.notes
+    } for v in vaults]), 200
+
+
+@passwords_bp.route('/reveal/<int:vault_id>', methods=['GET'])
+@jwt_required()
+def reveal_password(vault_id):
+    """Decrypt and return a single password on-demand for the owner only."""
+    user = get_current_user()
+    vault_entry = PasswordVault.query.filter_by(id=vault_id, user_id=user.id).first()
+
+    if not vault_entry:
+        return jsonify({'message': 'Not found or unauthorized'}), 404
+
+    try:
+        pwd = fernet.decrypt(vault_entry.encrypted_password.encode()).decode()
+    except Exception:
+        return jsonify({'message': 'Failed to decrypt — vault key may have changed'}), 500
+
+    return jsonify({'password': pwd}), 200
+
 
 @passwords_bp.route('/', methods=['POST'])
 @jwt_required()
 def add_password():
-    current_user = json.loads(get_jwt_identity())
+    user = get_current_user()
     data = request.get_json()
-    
-    if not data.get('password') or not data.get('title'):
+
+    if not data or not data.get('password') or not data.get('title'):  # Fixed: guard None
         return jsonify({'message': 'Title and password required'}), 400
-        
+
     encrypted_pwd = fernet.encrypt(data['password'].encode()).decode()
-    
+
     vault_entry = PasswordVault(
-        user_id=current_user['id'],
+        user_id=user.id,
         title=data['title'],
         username=data.get('username'),
         encrypted_password=encrypted_pwd,
@@ -58,18 +73,19 @@ def add_password():
     )
     db.session.add(vault_entry)
     db.session.commit()
-    
-    return jsonify({'message': 'Password securely stored'}), 201
+
+    return jsonify({'message': 'Password securely stored', 'id': vault_entry.id}), 201
+
 
 @passwords_bp.route('/<int:vault_id>', methods=['DELETE'])
 @jwt_required()
 def delete_password(vault_id):
-    current_user = json.loads(get_jwt_identity())
-    vault_entry = PasswordVault.query.filter_by(id=vault_id, user_id=current_user['id']).first()
-    
+    user = get_current_user()
+    vault_entry = PasswordVault.query.filter_by(id=vault_id, user_id=user.id).first()
+
     if not vault_entry:
         return jsonify({'message': 'Not found or unauthorized'}), 404
-        
+
     db.session.delete(vault_entry)
     db.session.commit()
     return jsonify({'message': 'Deleted successfully'}), 200

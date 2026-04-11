@@ -1,12 +1,16 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 from datetime import timedelta
 import os
+import logging
+import json
 
 load_dotenv()
 
@@ -14,30 +18,100 @@ db = SQLAlchemy()
 migrate = Migrate()
 bcrypt = Bcrypt()
 jwt = JWTManager()
+limiter = Limiter(key_func=get_remote_address, default_limits=["500/day"])
 
 def create_app():
+    # Setup structured logging targeting terminal
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    logger = logging.getLogger('famos')
+
     app = Flask(__name__)
-    
+
     # These fallbacks are INSECURE — always set real values in .env
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'CHANGE-ME-in-dotenv')
     db_uri = os.getenv('DATABASE_URI', 'sqlite:///app.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'CHANGE-ME-in-dotenv')
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)
-    
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)  # Reverted back to 30 days for personal UX
+
+    # Lock CORS to known frontend origins
+    allowed_origins = os.getenv(
+        'ALLOWED_ORIGINS',
+        'https://famos.reqnode.com'
+    ).split(',')
+
     CORS(app, resources={r"/api/*": {
-        "origins": "*",
+        "origins": allowed_origins,
         "allow_headers": ["Content-Type", "Authorization"],
         "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         "supports_credentials": False
     }})
-    
+
     db.init_app(app)
     migrate.init_app(app, db)
     bcrypt.init_app(app)
     jwt.init_app(app)
-    
+    limiter.init_app(app)
+
+    with app.app_context():
+        # Setup OTP temp table dynamically so we don't need manual alembic migrations for just this memory state.
+        try:
+            db.session.execute(db.text('''
+                CREATE TABLE IF NOT EXISTS otp_codes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    code VARCHAR(6) NOT NULL,
+                    expires_at DATETIME NOT NULL
+                )
+            '''))
+            db.session.commit()
+        except Exception as e:
+            logger.error(f"Failed configuring OTP memory table: {e}")
+
+        # Synchronize users.json
+        from app.models import User, Family
+        users_file = os.path.join(app.root_path, '..', 'users.json')
+        if os.path.exists(users_file):
+            logger.info("Synchronizing static users.json definitions to DB...")
+            try:
+                with open(users_file, 'r') as f:
+                    data = json.load(f)
+                
+                # Setup Family
+                family_name = data.get('family_name', 'Personal Core')
+                family = Family.query.first()
+                if not family:
+                    family = Family(name=family_name)
+                    db.session.add(family)
+                    db.session.commit()
+                else:
+                    family.name = family_name
+                    db.session.commit()
+
+                # Upsert Users
+                for u_data in data.get('users', []):
+                    user = User.query.filter_by(id=u_data['id']).first()
+                    if not user:
+                        user = User(
+                            id=u_data['id'], 
+                            phone_hash=u_data['phone_hash'], 
+                            name=u_data['name'], 
+                            role=u_data.get('role', 'member'), 
+                            family_id=family.id
+                        )
+                        db.session.add(user)
+                    else:
+                        user.phone_hash = u_data.get('phone_hash', user.phone_hash)
+                        user.name = u_data.get('name', user.name)
+                        user.role = u_data.get('role', user.role)
+                        user.family_id = family.id
+                db.session.commit()
+            except Exception as e:
+                logger.error(f"Failed to sync users.json: {e}")
+        else:
+            logger.warning("No users.json found in root. Cannot synchronize identities.")
+
     from app.routes.auth import auth_bp
     from app.routes.tasks import tasks_bp
     from app.routes.groceries import groceries_bp
@@ -46,7 +120,7 @@ def create_app():
     from app.routes.documents import documents_bp
     from app.routes.summary import summary_bp
     from app.routes.webhook import webhook_bp
-    
+
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(tasks_bp, url_prefix='/api/tasks')
     app.register_blueprint(groceries_bp, url_prefix='/api/groceries')
@@ -56,8 +130,6 @@ def create_app():
     app.register_blueprint(summary_bp, url_prefix='/api/summary')
     app.register_blueprint(webhook_bp, url_prefix='/webhook')
 
-    # Health check endpoint — used by Docker and monitoring
-    from flask import jsonify
     @app.route('/health')
     def health():
         try:

@@ -1,51 +1,67 @@
 """
-FamOS Database Setup Script
-Run this once on a fresh server. Safe to run again — won't lose data.
+Schema migration: v1 → v2
 
-For development: delete instance/app.db first to start completely fresh.
+Changes:
+  - Transaction: add `description` column (VARCHAR 300, nullable)
+  - Document: add `stored_filename` column (VARCHAR 300), replace old `file_path`
+  - Task: make `created_by` NOT NULL (if your db supports it inline)
+
+Run:  python migrate.py
 """
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import os
+import sqlite3
 
-from dotenv import load_dotenv
-load_dotenv()
+DB_PATH = os.path.join(os.path.dirname(__file__), 'instance', 'app.db')
 
-from app import create_app, db
-from app.models import Family, generate_invite_code
 
-app = create_app()
+def run():
+    if not os.path.exists(DB_PATH):
+        print(f'[migrate] DB not found at {DB_PATH} — skipping (will be created fresh on first run)')
+        return
 
-with app.app_context():
-    # Create all tables (skips tables that already exist)
-    db.create_all()
-    print("✓ All tables created")
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
-    # Backfill invite codes for any family that doesn't have one yet
-    families = Family.query.filter(
-        (Family.invite_code == None) | (Family.invite_code == '')
-    ).all()
-
-    for family in families:
-        # Generate unique code
-        code = generate_invite_code()
-        while Family.query.filter_by(invite_code=code).first():
-            code = generate_invite_code()
-        family.invite_code = code
-
-    if families:
-        db.session.commit()
-        print(f"✓ Generated invite codes for {len(families)} existing families")
-
-    # Print all families and their invite codes
-    all_families = Family.query.all()
-    if all_families:
-        print("\n── Your Family Invite Codes ─────────────────")
-        for f in all_families:
-            count = len(f.users)
-            print(f"  {f.name:30s}  →  {f.invite_code}  ({count} member{'s' if count != 1 else ''})")
-        print("─────────────────────────────────────────────")
+    # 1. transactions.description
+    cols = [r[1] for r in cur.execute("PRAGMA table_info(transactions)").fetchall()]
+    if 'description' not in cols:
+        cur.execute("ALTER TABLE transactions ADD COLUMN description VARCHAR(300)")
+        print('[migrate] Added transactions.description')
     else:
-        print("\nNo families yet — register the first user to create one.")
+        print('[migrate] transactions.description already exists — skip')
 
-    print("\n✅ Database ready.")
-    print("   Start the server: python run.py")
+    # 2. documents.stored_filename
+    cols = [r[1] for r in cur.execute("PRAGMA table_info(documents)").fetchall()]
+    if 'stored_filename' not in cols:
+        # Back-fill stored_filename from existing file_path (basename only)
+        cur.execute("ALTER TABLE documents ADD COLUMN stored_filename VARCHAR(300)")
+        cur.execute("""
+            UPDATE documents
+            SET stored_filename = REPLACE(file_path, RTRIM(file_path, REPLACE(file_path, '/', '')), '')
+            WHERE stored_filename IS NULL OR stored_filename = ''
+        """)
+        # Fallback for Windows paths
+        cur.execute("""
+            UPDATE documents
+            SET stored_filename = REPLACE(file_path, RTRIM(file_path, REPLACE(file_path, '\', '')), '')
+            WHERE stored_filename IS NULL OR stored_filename = ''
+        """)
+        print('[migrate] Added documents.stored_filename and back-filled from file_path')
+    else:
+        print('[migrate] documents.stored_filename already exists — skip')
+
+    # 3. users.phone_hash
+    cols = [r[1] for r in cur.execute("PRAGMA table_info(users)").fetchall()]
+    if 'phone_hash' not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN phone_hash VARCHAR(50)")
+        print('[migrate] Added users.phone_hash')
+    else:
+        print('[migrate] users.phone_hash already exists — skip')
+
+    conn.commit()
+    conn.close()
+    print('[migrate] Done.')
+
+
+if __name__ == '__main__':
+    run()

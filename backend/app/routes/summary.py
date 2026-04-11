@@ -1,18 +1,25 @@
 from flask import Blueprint, jsonify
 from app import db
-from app.models import Task, Grocery, Transaction, User
-from flask_jwt_extended import jwt_required, get_jwt_identity
-import json
+from app.models import Task, Grocery, Transaction
+from app.routes.auth import get_current_user
+from flask_jwt_extended import jwt_required
 from datetime import datetime, timedelta
 
 summary_bp = Blueprint('summary', __name__)
 
+
 @summary_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_dashboard_summary():
-    current_user = json.loads(get_jwt_identity())
-    family_id = current_user['family_id']
-    user_id = current_user['id']
+    user = get_current_user()
+    if not user or not user.family_id:
+        return jsonify({
+            'tasks': {'total': 0, 'pending': 0, 'completed': 0, 'due_soon': [], 'overdue': []},
+            'groceries': {'total': 0, 'pending': 0, 'bought': 0},
+            'finances': {'balance': 0, 'month_spent': 0, 'recent_transactions': []}
+        }), 200
+
+    family_id = user.family_id
 
     # Tasks summary
     all_tasks = Task.query.filter_by(family_id=family_id).all()
@@ -27,7 +34,7 @@ def get_dashboard_summary():
     all_tx = Transaction.query.filter_by(family_id=family_id).order_by(Transaction.date.desc()).all()
     balance = 0
     month_spent = 0
-    this_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0)
+    this_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     for t in all_tx:
         if t.type == 'income':
@@ -46,22 +53,23 @@ def get_dashboard_summary():
         'date': t.date.isoformat() if t.date else None
     } for t in all_tx[:3]]
 
-    # Upcoming: tasks due in next 3 days
-    soon = datetime.utcnow() + timedelta(days=3)
-    due_soon = [{
-        'id': t.id,
-        'title': t.title,
-        'priority': t.priority,
-        'due_date': t.due_date.isoformat() if t.due_date else None
-    } for t in pending_tasks if t.due_date and t.due_date <= soon]
-
-    # Overdue tasks
+    # Fix: overdue = strictly past deadline
     now = datetime.utcnow()
+    soon = now + timedelta(days=3)
+
     overdue = [{
         'id': t.id,
         'title': t.title,
         'priority': t.priority
     } for t in pending_tasks if t.due_date and t.due_date < now]
+
+    # Fix: due_soon excludes already-overdue tasks (no double-listing)
+    due_soon = [{
+        'id': t.id,
+        'title': t.title,
+        'priority': t.priority,
+        'due_date': t.due_date.isoformat() if t.due_date else None
+    } for t in pending_tasks if t.due_date and now <= t.due_date <= soon]
 
     return jsonify({
         'tasks': {

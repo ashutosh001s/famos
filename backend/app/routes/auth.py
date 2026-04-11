@@ -1,131 +1,106 @@
-from flask import request, jsonify
-from app import db, bcrypt
+from flask import Blueprint, request, jsonify
+from app import db, limiter
 from app.models import User, Family
 from . import auth_bp
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-import json
+import logging
+from datetime import datetime, timedelta
+import secrets
 
+logger = logging.getLogger('famos.auth')
 
 def make_token(user):
-    return create_access_token(identity=json.dumps({
-        'id': user.id,
-        'family_id': user.family_id,
-        'role': user.role,
-        'name': user.name
-    }))
+    return create_access_token(identity=str(user.id))
 
+def get_current_user():
+    try:
+        user_id = int(get_jwt_identity())
+        return User.query.get(user_id)
+    except:
+        return None
 
 # ── Get current user info ────────────────────────────────────
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_me():
-    current_user = json.loads(get_jwt_identity())
-    user = User.query.get(current_user['id'])
+    user = get_current_user()
     if not user:
         return jsonify({'message': 'User not found'}), 404
     family = Family.query.get(user.family_id)
     return jsonify({
         'id': user.id,
         'name': user.name,
-        'email': user.email,
+        'phone_hash': user.phone_hash,
         'role': user.role,
         'family_id': user.family_id,
-        'family_name': family.name if family else None,
-        'invite_code': family.invite_code if (family and user.role == 'admin') else None
+        'family_name': family.name if family else None
     }), 200
 
-
-# ── Register — creates a new family, user becomes admin ──────
-@auth_bp.route('/register', methods=['POST'])
-def register():
+# ── Request OTP ──────────────────────────────────────────────
+@auth_bp.route('/request-otp', methods=['POST'])
+@limiter.limit("5/minute")
+def request_otp():
     data = request.get_json()
-    if not data or not data.get('email') or not data.get('password') or not data.get('name'):
-        return jsonify({'message': 'Name, email, and password are required'}), 400
+    if not data or not data.get('phone_hash'):
+        return jsonify({'message': 'Identifier required'}), 400
 
-    if User.query.filter_by(email=data['email'].lower().strip()).first():
-        return jsonify({'message': 'An account with this email already exists'}), 400
+    phone_hash = data['phone_hash'].strip().lower()
+    user = User.query.filter_by(phone_hash=phone_hash).first()
 
-    family_name = data.get('family_name', f"{data['name'].strip()}'s Family")
-    family = Family(name=family_name)
-    db.session.add(family)
-    db.session.flush()  # gets family.id without committing
+    if not user:
+        # Generic message to prevent enumeration
+        return jsonify({'message': 'If the identifier exists, an OTP has been generated.'}), 200
 
-    hashed_pw = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-    user = User(
-        name=data['name'].strip(),
-        email=data['email'].lower().strip(),
-        password_hash=hashed_pw,
-        role='admin',
-        family_id=family.id
-    )
-    db.session.add(user)
+    # Clean old OTPs for this user
+    db.session.execute(db.text("DELETE FROM otp_codes WHERE user_id = :user_id"), {'user_id': user.id})
+    
+    # Generate 6-digit strict numerical code
+    code = f"{secrets.randbelow(1000000):06d}"
+    expires = datetime.utcnow() + timedelta(minutes=5)
+
+    db.session.execute(db.text('''
+        INSERT INTO otp_codes (user_id, code, expires_at)
+        VALUES (:user_id, :code, :expires)
+    '''), {'user_id': user.id, 'code': code, 'expires': expires})
     db.session.commit()
 
-    return jsonify({
-        'message': 'Family created! Share the invite code with members.',
-        'access_token': make_token(user),
-        'user': {
-            'id': user.id,
-            'name': user.name,
-            'email': user.email,
-            'role': user.role,
-            'family_id': family.id,
-            'family_name': family.name,
-            'invite_code': family.invite_code
-        }
-    }), 201
+    # CORE MECHANIC: Print OTP to server console
+    logger.info(f"\n" + "="*40 + f"\n[SECURE OTP] {user.name}'s Auth Code: {code}\n" + "="*40)
 
+    return jsonify({'message': 'If the identifier exists, an OTP has been generated.'}), 200
 
-# ── Join Family — member registers using invite code ─────────
-@auth_bp.route('/join', methods=['POST'])
-def join_family():
+# ── Verify OTP ───────────────────────────────────────────────
+@auth_bp.route('/verify-otp', methods=['POST'])
+@limiter.limit("15/minute")
+def verify_otp():
     data = request.get_json()
-    required = ['name', 'email', 'password', 'invite_code']
-    if not data or not all(data.get(f) for f in required):
-        return jsonify({'message': 'Name, email, password, and invite_code are required'}), 400
+    if not data or not data.get('phone_hash') or not data.get('otp'):
+        return jsonify({'message': 'Identifier and OTP required'}), 400
 
-    if User.query.filter_by(email=data['email'].lower().strip()).first():
-        return jsonify({'message': 'An account with this email already exists'}), 400
+    phone_hash = data['phone_hash'].strip().lower()
+    otp = data['otp'].strip()
 
-    family = Family.query.filter_by(invite_code=data['invite_code'].strip().upper()).first()
-    if not family:
-        return jsonify({'message': 'Invalid invite code. Ask your family admin for the correct code.'}), 404
+    user = User.query.filter_by(phone_hash=phone_hash).first()
+    if not user:
+        return jsonify({'message': 'Invalid identifier or OTP'}), 401
 
-    hashed_pw = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-    user = User(
-        name=data['name'].strip(),
-        email=data['email'].lower().strip(),
-        password_hash=hashed_pw,
-        role='member',
-        family_id=family.id
-    )
-    db.session.add(user)
+    # Fetch valid OTP
+    now = datetime.utcnow()
+    otp_record = db.session.execute(db.text('''
+        SELECT id, code FROM otp_codes 
+        WHERE user_id = :user_id AND expires_at > :now
+        ORDER BY id DESC LIMIT 1
+    '''), {'user_id': user.id, 'now': now}).fetchone()
+
+    if not otp_record or otp_record.code != otp:
+        logger.warning(f"Failed OTP attempt for {user.name}")
+        return jsonify({'message': 'Invalid identifier or OTP'}), 401
+
+    # Successfully verified — delete all OTPs for user and issue JWT
+    db.session.execute(db.text("DELETE FROM otp_codes WHERE user_id = :user_id"), {'user_id': user.id})
     db.session.commit()
 
-    return jsonify({
-        'message': f"Joined {family.name} successfully!",
-        'access_token': make_token(user),
-        'user': {
-            'id': user.id,
-            'name': user.name,
-            'email': user.email,
-            'role': user.role,
-            'family_id': family.id,
-            'family_name': family.name,
-        }
-    }), 201
-
-
-# ── Login ─────────────────────────────────────────────────────
-@auth_bp.route('/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    if not data or not data.get('email') or not data.get('password'):
-        return jsonify({'message': 'Email and password are required'}), 400
-
-    user = User.query.filter_by(email=data['email'].lower().strip()).first()
-    if not user or not bcrypt.check_password_hash(user.password_hash, data['password']):
-        return jsonify({'message': 'Invalid email or password'}), 401
+    logger.info(f"User {user.name} successfully authenticated via OTP.")
 
     family = Family.query.get(user.family_id)
     return jsonify({
@@ -134,55 +109,23 @@ def login():
         'user': {
             'id': user.id,
             'name': user.name,
-            'email': user.email,
             'role': user.role,
             'family_id': user.family_id,
-            'family_name': family.name if family else None,
-            'invite_code': family.invite_code if (family and user.role == 'admin') else None
+            'family_name': family.name if family else None
         }
     }), 200
-
 
 # ── Get family members ────────────────────────────────────────
 @auth_bp.route('/family/members', methods=['GET'])
 @jwt_required()
 def get_family_members():
-    current_user = json.loads(get_jwt_identity())
-    members = User.query.filter_by(family_id=current_user['family_id']).all()
+    user = get_current_user()
+    if not user or not user.family_id:
+        return jsonify([]), 200
+    members = User.query.filter_by(family_id=user.family_id).all()
+    # Read-only API map
     return jsonify([{
         'id': m.id,
         'name': m.name,
-        'email': m.email,
         'role': m.role
     } for m in members]), 200
-
-
-# ── Get invite code (admin only) ──────────────────────────────
-@auth_bp.route('/family/invite-code', methods=['GET'])
-@jwt_required()
-def get_invite_code():
-    current_user = json.loads(get_jwt_identity())
-    if current_user['role'] != 'admin':
-        return jsonify({'message': 'Only the family admin can view the invite code'}), 403
-    family = Family.query.get(current_user['family_id'])
-    return jsonify({
-        'invite_code': family.invite_code,
-        'family_name': family.name
-    }), 200
-
-
-# ── Regenerate invite code (admin only) ───────────────────────
-@auth_bp.route('/family/invite-code/regenerate', methods=['POST'])
-@jwt_required()
-def regenerate_invite_code():
-    current_user = json.loads(get_jwt_identity())
-    if current_user['role'] != 'admin':
-        return jsonify({'message': 'Only the family admin can regenerate the invite code'}), 403
-    from app.models import generate_invite_code
-    family = Family.query.get(current_user['family_id'])
-    family.invite_code = generate_invite_code()
-    db.session.commit()
-    return jsonify({
-        'message': 'Invite code regenerated',
-        'invite_code': family.invite_code
-    }), 200

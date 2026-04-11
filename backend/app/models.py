@@ -1,36 +1,35 @@
 from app import db
 from datetime import datetime
-import random, string
+import secrets, string
 
-def generate_invite_code():
-    """Generate a unique 6-character uppercase invite code e.g. FAM3X9"""
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 class Family(db.Model):
     __tablename__ = 'families'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    invite_code = db.Column(db.String(10), unique=True, nullable=True, default=generate_invite_code)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     users = db.relationship('User', backref='family', lazy=True)
     tasks = db.relationship('Task', backref='family', lazy=True)
     groceries = db.relationship('Grocery', backref='family', lazy=True)
     transactions = db.relationship('Transaction', backref='family', lazy=True)
 
+
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     family_id = db.Column(db.Integer, db.ForeignKey('families.id'), nullable=True)
+    phone_hash = db.Column(db.String(50), unique=True, nullable=True)
     name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.String(20), default='member') # 'admin' or 'member'
+    email = db.Column(db.String(120), unique=True, nullable=True)
+    password_hash = db.Column(db.String(128), nullable=True)
+    role = db.Column(db.String(20), default='member')  # 'admin' or 'member'
+
 
 class Task(db.Model):
     __tablename__ = 'tasks'
     id = db.Column(db.Integer, primary_key=True)
     family_id = db.Column(db.Integer, db.ForeignKey('families.id'), nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # Fixed: not nullable
     assigned_to = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
@@ -38,6 +37,7 @@ class Task(db.Model):
     status = db.Column(db.String(20), default='pending')
     due_date = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 class Grocery(db.Model):
     __tablename__ = 'groceries'
@@ -50,17 +50,20 @@ class Grocery(db.Model):
     status = db.Column(db.String(20), default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
 class Transaction(db.Model):
     __tablename__ = 'transactions'
     id = db.Column(db.Integer, primary_key=True)
     family_id = db.Column(db.Integer, db.ForeignKey('families.id'), nullable=False)
     paid_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    type = db.Column(db.String(20), default='expense') # 'income', 'expense'
+    type = db.Column(db.String(20), default='expense')  # 'income', 'expense'
     amount = db.Column(db.Float, nullable=False)
     category = db.Column(db.String(50), nullable=False)
-    payment_method = db.Column(db.String(50), nullable=True) # UPI, Cash, Card
+    description = db.Column(db.String(300), nullable=True)  # Added: notes/description field
+    payment_method = db.Column(db.String(50), nullable=True)  # UPI, Cash, Card
     date = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 class PasswordVault(db.Model):
     __tablename__ = 'password_vault'
@@ -73,14 +76,14 @@ class PasswordVault(db.Model):
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
 class Document(db.Model):
     __tablename__ = 'documents'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     family_id = db.Column(db.Integer, db.ForeignKey('families.id'), nullable=False)
     filename = db.Column(db.String(200), nullable=False)
-    file_path = db.Column(db.String(500), nullable=False)
-    category = db.Column(db.String(50), nullable=False) # Govt ID, Bank Docs, etc.
-    visibility = db.Column(db.String(20), default='individual') # individual or family
+    stored_filename = db.Column(db.String(300), nullable=False)  # uuid-prefixed safe name
+    category = db.Column(db.String(50), nullable=False)  # Govt ID, Bank Docs, etc.
+    visibility = db.Column(db.String(20), default='individual')  # individual or family
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
-

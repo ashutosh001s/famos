@@ -1,36 +1,46 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models import Transaction, User
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.models import Transaction
+from app.routes.auth import get_current_user
+from flask_jwt_extended import jwt_required
 from fpdf import FPDF
 from flask import send_file
-import json
-import os
-from sqlalchemy import func
+import io
 
 expenses_bp = Blueprint('expenses', __name__)
+
 
 @expenses_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_expenses():
-    current_user = json.loads(get_jwt_identity())
-    expenses = Transaction.query.filter_by(family_id=current_user['family_id']).order_by(Transaction.id.desc()).all()
+    user = get_current_user()
+    if not user or not user.family_id:
+        return jsonify([]), 200
+
+    expenses = Transaction.query.filter_by(
+        family_id=user.family_id
+    ).order_by(Transaction.id.desc()).all()
+
     return jsonify([{
         'id': e.id,
         'type': e.type,
         'amount': e.amount,
         'category': e.category,
+        'description': e.description,
         'payment_method': e.payment_method,
         'paid_by': e.paid_by,
         'date': e.date.isoformat() if e.date else None
     } for e in expenses]), 200
 
+
 @expenses_bp.route('/', methods=['POST'])
 @jwt_required()
 def add_expense():
-    current_user = json.loads(get_jwt_identity())
-    data = request.get_json()
+    user = get_current_user()
+    if not user or not user.family_id:
+        return jsonify({'message': 'You must be in a family to log transactions'}), 403
 
+    data = request.get_json()
     if not data:
         return jsonify({'message': 'No data provided'}), 400
 
@@ -45,22 +55,37 @@ def add_expense():
         return jsonify({'message': 'Category is required for expenses'}), 400
 
     exp = Transaction(
-        family_id=current_user['family_id'],
-        paid_by=current_user['id'],
+        family_id=user.family_id,
+        paid_by=user.id,
         type=tx_type,
         amount=float(amount),
         category=category,
+        description=data.get('description', '').strip() or None,
         payment_method=data.get('payment_method')
     )
     db.session.add(exp)
     db.session.commit()
     return jsonify({'message': 'Transaction logged', 'id': exp.id}), 201
 
+
+@expenses_bp.route('/<int:tx_id>', methods=['DELETE'])
+@jwt_required()
+def delete_expense(tx_id):
+    """Delete a transaction. Any family member can delete any family transaction."""
+    user = get_current_user()
+    tx = Transaction.query.filter_by(id=tx_id, family_id=user.family_id).first()
+    if not tx:
+        return jsonify({'message': 'Transaction not found'}), 404
+    db.session.delete(tx)
+    db.session.commit()
+    return jsonify({'message': 'Transaction deleted'}), 200
+
+
 @expenses_bp.route('/summary', methods=['GET'])
 @jwt_required()
 def get_summary():
-    current_user = json.loads(get_jwt_identity())
-    transactions = Transaction.query.filter_by(family_id=current_user['family_id']).all()
+    user = get_current_user()
+    transactions = Transaction.query.filter_by(family_id=user.family_id).all()
 
     balance = 0
     family_spent = 0
@@ -73,7 +98,7 @@ def get_summary():
         else:
             balance -= t.amount
             family_spent += t.amount
-            if t.paid_by == current_user['id']:
+            if t.paid_by == user.id:
                 individual_spent += t.amount
             breakdown[t.category] = breakdown.get(t.category, 0) + t.amount
 
@@ -84,12 +109,13 @@ def get_summary():
         'breakdown': {k: round(v, 2) for k, v in breakdown.items()}
     }), 200
 
+
 @expenses_bp.route('/statement/pdf', methods=['GET'])
 @jwt_required()
 def generate_statement():
-    current_user = json.loads(get_jwt_identity())
+    user = get_current_user()
     transactions = Transaction.query.filter_by(
-        family_id=current_user['family_id']
+        family_id=user.family_id
     ).order_by(Transaction.date.asc()).all()
 
     pdf = FPDF()
@@ -139,7 +165,6 @@ def generate_statement():
     pdf.set_text_color(*color)
     pdf.cell(0, 10, f"Closing Balance: Rs. {round(balance, 2)}")
 
-    import tempfile, io
     buf = io.BytesIO()
     pdf.output(buf)
     buf.seek(0)
