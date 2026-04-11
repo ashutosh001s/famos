@@ -24,11 +24,12 @@ class Task(db.Model):
     __tablename__ = 'tasks'
     id = db.Column(db.Integer, primary_key=True)
     family_id = db.Column(db.Integer, db.ForeignKey('families.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     assigned_to = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    priority = db.Column(db.String(20), default='medium') # 'low', 'medium', 'high'
-    status = db.Column(db.String(20), default='pending') # 'pending', 'completed', 'ignored'
+    priority = db.Column(db.String(20), default='medium')
+    status = db.Column(db.String(20), default='pending')
     due_date = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -39,7 +40,8 @@ class Grocery(db.Model):
     added_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     quantity = db.Column(db.Integer, default=1)
-    status = db.Column(db.String(20), default='pending') # 'pending', 'bought'
+    category = db.Column(db.String(50), default='Other')
+    status = db.Column(db.String(20), default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Transaction(db.Model):

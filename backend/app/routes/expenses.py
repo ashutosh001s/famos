@@ -139,8 +139,13 @@ def generate_statement():
     pdf.set_text_color(*color)
     pdf.cell(0, 10, f"Closing Balance: Rs. {round(balance, 2)}")
 
-    # Save to temp file
-    file_path = os.path.join(os.getcwd(), f"statement_{current_user['family_id']}.pdf")
-    pdf.output(file_path)
-
-    return send_file(file_path, as_attachment=True, download_name="Family_Statement.pdf")
+    import tempfile, io
+    buf = io.BytesIO()
+    pdf.output(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name='Family_Statement.pdf',
+        mimetype='application/pdf'
+    )

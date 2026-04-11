@@ -69,3 +69,22 @@ def login():
         }), 200
         
     return jsonify({'message': 'Invalid credentials'}), 401
+        'invite_code': family.invite_code,
+        'family_name': family.name
+    }), 200
+
+# ── Regenerate invite code (admin only) ──────────────────────
+@auth_bp.route('/family/invite-code/regenerate', methods=['POST'])
+@jwt_required()
+def regenerate_invite_code():
+    current_user = json.loads(get_jwt_identity())
+    if current_user['role'] != 'admin':
+        return jsonify({'message': 'Only the family admin can regenerate the invite code'}), 403
+    from app.models import generate_invite_code
+    family = Family.query.get(current_user['family_id'])
+    family.invite_code = generate_invite_code()
+    db.session.commit()
+    return jsonify({
+        'message': 'Invite code regenerated',
+        'invite_code': family.invite_code
+    }), 200

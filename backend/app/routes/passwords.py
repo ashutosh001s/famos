@@ -8,9 +8,11 @@ import os
 
 passwords_bp = Blueprint('passwords', __name__)
 
-# Initialize Fernet with Vault Key
-key = os.getenv('VAULT_ENCRYPTION_KEY', 'n1B6oP8jXoXq5_aP2Vq9A9jM8R-2lEaB385pLZGgM9M=')
-fernet = Fernet(key.encode())
+# Key MUST be in .env — app will refuse to start without it
+_vault_key = os.getenv('VAULT_ENCRYPTION_KEY')
+if not _vault_key:
+    raise RuntimeError('VAULT_ENCRYPTION_KEY is not set. Add it to your .env file.')
+fernet = Fernet(_vault_key.encode())
 
 @passwords_bp.route('/', methods=['GET'])
 @jwt_required()

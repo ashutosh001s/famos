@@ -18,13 +18,20 @@ jwt = JWTManager()
 def create_app():
     app = Flask(__name__)
     
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-secret-key')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///app.db')
+    # These fallbacks are INSECURE — always set real values in .env
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'CHANGE-ME-in-dotenv')
+    db_uri = os.getenv('DATABASE_URI', 'sqlite:///app.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key')
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)  # 30-day sessions for family app
+    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'CHANGE-ME-in-dotenv')
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)
     
-    CORS(app)
+    CORS(app, resources={r"/api/*": {
+        "origins": "*",
+        "allow_headers": ["Content-Type", "Authorization"],
+        "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        "supports_credentials": False
+    }})
     
     db.init_app(app)
     migrate.init_app(app, db)
@@ -38,6 +45,7 @@ def create_app():
     from app.routes.passwords import passwords_bp
     from app.routes.documents import documents_bp
     from app.routes.summary import summary_bp
+    from app.routes.webhook import webhook_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(tasks_bp, url_prefix='/api/tasks')
@@ -46,6 +54,7 @@ def create_app():
     app.register_blueprint(passwords_bp, url_prefix='/api/passwords')
     app.register_blueprint(documents_bp, url_prefix='/api/documents')
     app.register_blueprint(summary_bp, url_prefix='/api/summary')
+    app.register_blueprint(webhook_bp, url_prefix='/webhook')
 
     # Health check endpoint — used by Docker and monitoring
     from flask import jsonify

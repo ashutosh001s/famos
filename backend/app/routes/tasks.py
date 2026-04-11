@@ -1,11 +1,15 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models import Task
+from app.models import Task, User
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import json
 from datetime import datetime
 
 tasks_bp = Blueprint('tasks', __name__)
+
+def _user_name(user_id):
+    u = User.query.get(user_id)
+    return u.name if u else 'Unknown'
 
 @tasks_bp.route('/', methods=['GET'])
 @jwt_required()
@@ -20,6 +24,8 @@ def get_tasks():
         'status': t.status,
         'due_date': t.due_date.isoformat() if t.due_date else None,
         'assigned_to': t.assigned_to,
+        'assigned_to_name': _user_name(t.assigned_to) if t.assigned_to else None,
+        'created_by_name': _user_name(t.created_by) if t.created_by else None,
         'created_at': t.created_at.isoformat() if t.created_at else None
     } for t in tasks]), 200
 
@@ -41,13 +47,13 @@ def add_task():
 
     task = Task(
         family_id=current_user['family_id'],
+        created_by=current_user['id'],
         assigned_to=data.get('assigned_to'),
         title=data.get('title').strip(),
         description=data.get('description', '').strip(),
         priority=data.get('priority', 'medium'),
         due_date=due_date
     )
-
     db.session.add(task)
     db.session.commit()
     return jsonify({'message': 'Task created!', 'id': task.id}), 201
@@ -57,18 +63,13 @@ def add_task():
 def update_task(task_id):
     current_user = json.loads(get_jwt_identity())
     task = Task.query.filter_by(id=task_id, family_id=current_user['family_id']).first()
-
     if not task:
         return jsonify({'message': 'Task not found'}), 404
-
     data = request.get_json()
-    if 'status' in data:
-        task.status = data['status']
-    if 'priority' in data:
-        task.priority = data['priority']
-    if 'title' in data:
-        task.title = data['title']
-
+    if 'status' in data: task.status = data['status']
+    if 'priority' in data: task.priority = data['priority']
+    if 'title' in data: task.title = data['title']
+    if 'assigned_to' in data: task.assigned_to = data['assigned_to']
     db.session.commit()
     return jsonify({'message': 'Task updated'}), 200
 
@@ -77,10 +78,8 @@ def update_task(task_id):
 def delete_task(task_id):
     current_user = json.loads(get_jwt_identity())
     task = Task.query.filter_by(id=task_id, family_id=current_user['family_id']).first()
-
     if not task:
         return jsonify({'message': 'Task not found'}), 404
-
     db.session.delete(task)
     db.session.commit()
     return jsonify({'message': 'Task deleted'}), 200
