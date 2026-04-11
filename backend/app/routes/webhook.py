@@ -18,6 +18,17 @@ def _run_deploy():
     try:
         # Pull updates
         subprocess.run(['git', 'pull', 'origin', 'main'], cwd=base_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Hydrate dependencies natively using the active virtual environment Python
+        pip_exec = os.path.join(base_dir, 'backend', 'venv', 'bin', 'pip')
+        # Windows fallback just in case
+        if not os.path.exists(pip_exec):
+            pip_exec = os.path.join(base_dir, 'backend', 'venv', 'Scripts', 'pip')
+        
+        reqs_file = os.path.join(base_dir, 'backend', 'requirements.txt')
+        if os.path.exists(pip_exec) and os.path.exists(reqs_file):
+            subprocess.run([pip_exec, 'install', '-r', reqs_file], cwd=base_dir, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
         # If Gunicorn/Uvicorn or debug active, touching init forces an auto-reload
         init_file = os.path.join(base_dir, 'backend', 'app', '__init__.py')
         if os.path.exists(init_file):

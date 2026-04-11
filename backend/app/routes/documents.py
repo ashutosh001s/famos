@@ -9,9 +9,13 @@ import uuid
 
 documents_bp = Blueprint('documents', __name__)
 
-UPLOAD_FOLDER = os.path.join(os.getcwd(), 'secure_uploads')
+# Pin upload folder relative to this file to avoid Gunicorn getcwd inconsistency
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'secure_uploads')
 if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+    try:
+        os.makedirs(UPLOAD_FOLDER)
+    except Exception: pass
 
 # Security: only allow known safe file types
 ALLOWED_EXTENSIONS = {

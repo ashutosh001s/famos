@@ -72,13 +72,37 @@ def create_app():
         # Synchronize users.json
         from app.models import User, Family
         
-        # Self-healing: assure phone_hash column exists since we deleted deploy bash migrations 
+        # Self-healing: assure schema updates exist since we deleted deploy bash migrations 
         try:
             db.session.execute(db.text("ALTER TABLE users ADD COLUMN phone_hash VARCHAR(50)"))
             db.session.commit()
-            logger.info("Auto-migrated phone_hash schema flawlessly.")
-        except Exception:
-            pass # Usually means the column already exists on this node
+        except Exception: pass
+        
+        try:
+            db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN description VARCHAR(300)"))
+            db.session.commit()
+        except Exception: pass
+
+        try:
+            # Add created_at just in case it's missing from previous versions
+            db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN created_at DATETIME"))
+            db.session.commit()
+        except Exception: pass
+
+        try:
+            db.session.execute(db.text("ALTER TABLE documents ADD COLUMN stored_filename VARCHAR(300)"))
+            db.session.commit()
+        except Exception: pass
+
+        try:
+            db.session.execute(db.text("ALTER TABLE documents ADD COLUMN category VARCHAR(50) DEFAULT 'Other'"))
+            db.session.commit()
+        except Exception: pass
+
+        try:
+            db.session.execute(db.text("ALTER TABLE documents ADD COLUMN visibility VARCHAR(20) DEFAULT 'individual'"))
+            db.session.commit()
+        except Exception: pass
 
         users_file = os.path.join(app.root_path, '..', 'users.json')
         if os.path.exists(users_file):
