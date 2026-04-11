@@ -102,12 +102,15 @@ def create_app():
                 for u_data in data.get('users', []):
                     user = User.query.filter_by(id=u_data['id']).first()
                     if not user:
+                        # SQLite NOT NULL legacy constraint bypass
                         user = User(
                             id=u_data['id'], 
                             phone_hash=u_data['phone_hash'], 
                             name=u_data['name'], 
                             role=u_data.get('role', 'member'), 
-                            family_id=family.id
+                            family_id=family.id,
+                            email=f"dummy_{u_data['id']}@localhost.local",
+                            password_hash="removed"
                         )
                         db.session.add(user)
                     else:
