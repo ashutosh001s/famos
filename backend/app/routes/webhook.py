@@ -13,21 +13,18 @@ def _verify_signature(payload_bytes: bytes, signature_header: str) -> bool:
     return hmac.compare_digest(expected, signature_header or '')
 
 def _run_deploy():
-    """Run deploy.sh in the background so Flask can return 200 immediately."""
-    deploy_script = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        '..', '..', '..', 'deploy.sh'
-    )
-    deploy_script = os.path.normpath(deploy_script)
+    """Run git pull intrinsically so Flask can return 200 immediately without relying on shell scripts."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     try:
-        subprocess.Popen(
-            ['bash', deploy_script],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True  # Detach from Flask process
-        )
+        # Pull updates
+        subprocess.run(['git', 'pull', 'origin', 'main'], cwd=base_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # If Gunicorn/Uvicorn or debug active, touching init forces an auto-reload
+        init_file = os.path.join(base_dir, 'backend', 'app', '__init__.py')
+        if os.path.exists(init_file):
+            subprocess.run(['touch', init_file], cwd=base_dir)
+        print('[Webhook] Automated Git deploy cycle completed natively.')
     except Exception as e:
-        print(f'[Webhook] Deploy script error: {e}')
+        print(f'[Webhook] Intrinsic deploy error: {e}')
 
 @webhook_bp.route('/github', methods=['POST'])
 def github_webhook():

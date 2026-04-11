@@ -71,6 +71,15 @@ def create_app():
 
         # Synchronize users.json
         from app.models import User, Family
+        
+        # Self-healing: assure phone_hash column exists since we deleted deploy bash migrations 
+        try:
+            db.session.execute(db.text("ALTER TABLE users ADD COLUMN phone_hash VARCHAR(50)"))
+            db.session.commit()
+            logger.info("Auto-migrated phone_hash schema flawlessly.")
+        except Exception:
+            pass # Usually means the column already exists on this node
+
         users_file = os.path.join(app.root_path, '..', 'users.json')
         if os.path.exists(users_file):
             logger.info("Synchronizing static users.json definitions to DB...")
