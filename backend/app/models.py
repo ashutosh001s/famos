@@ -1,10 +1,16 @@
 from app import db
 from datetime import datetime
+import random, string
+
+def generate_invite_code():
+    """Generate a unique 6-character uppercase invite code e.g. FAM3X9"""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 class Family(db.Model):
     __tablename__ = 'families'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    invite_code = db.Column(db.String(10), unique=True, nullable=True, default=generate_invite_code)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     users = db.relationship('User', backref='family', lazy=True)
     tasks = db.relationship('Task', backref='family', lazy=True)
