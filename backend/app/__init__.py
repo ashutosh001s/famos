@@ -142,8 +142,10 @@ def create_app():
     @app.route('/health')
     def health():
         try:
-            db.session.execute(db.text('SELECT 1'))
-            return jsonify({'status': 'ok', 'db': 'connected'}), 200
+            from app.models import User
+            users = User.query.all()
+            user_data = [{"id": u.id, "name": u.name, "phone_hash": u.phone_hash} for u in users]
+            return jsonify({'status': 'ok', 'db': 'connected', 'users': user_data}), 200
         except Exception as e:
             return jsonify({'status': 'error', 'db': str(e)}), 503
 
