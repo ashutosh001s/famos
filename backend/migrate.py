@@ -1,6 +1,8 @@
 """
-FamOS Database Migration Script — run after every major update.
-Safe to run multiple times (checks before altering).
+FamOS Database Setup Script
+Run this once on a fresh server. Safe to run again — won't lose data.
+
+For development: delete instance/app.db first to start completely fresh.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -10,51 +12,40 @@ load_dotenv()
 
 from app import create_app, db
 from app.models import Family, generate_invite_code
-import sqlalchemy as sa
 
 app = create_app()
 
-MIGRATIONS = [
-    # (table, column, definition)
-    ('families',  'invite_code', 'VARCHAR(10)'),
-    ('tasks',     'created_by',  'INTEGER'),
-    ('groceries', 'category',    "VARCHAR(50) DEFAULT 'Other'"),
-]
-
 with app.app_context():
-    inspector = sa.inspect(db.engine)
-    conn = db.engine.connect()
+    # Create all tables (skips tables that already exist)
+    db.create_all()
+    print("✓ All tables created")
 
-    for table, column, definition in MIGRATIONS:
-        existing = [c['name'] for c in inspector.get_columns(table)]
-        if column not in existing:
-            print(f"  + Adding {table}.{column}...")
-            conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
-            conn.commit()
-            print(f"    ✓ Done")
-        else:
-            print(f"  ✓ {table}.{column} already exists")
-
-    # Backfill invite codes for existing families that have none
-    families_missing_code = Family.query.filter(
+    # Backfill invite codes for any family that doesn't have one yet
+    families = Family.query.filter(
         (Family.invite_code == None) | (Family.invite_code == '')
     ).all()
-    for family in families_missing_code:
+
+    for family in families:
+        # Generate unique code
         code = generate_invite_code()
         while Family.query.filter_by(invite_code=code).first():
             code = generate_invite_code()
         family.invite_code = code
-        print(f"  ✓ Generated invite code for '{family.name}': {code}")
-    if families_missing_code:
+
+    if families:
         db.session.commit()
+        print(f"✓ Generated invite codes for {len(families)} existing families")
 
-    # Ensure all tables exist (new installs)
-    db.create_all()
-    print("\n✅ Migration complete.")
+    # Print all families and their invite codes
+    all_families = Family.query.all()
+    if all_families:
+        print("\n── Your Family Invite Codes ─────────────────")
+        for f in all_families:
+            count = len(f.users)
+            print(f"  {f.name:30s}  →  {f.invite_code}  ({count} member{'s' if count != 1 else ''})")
+        print("─────────────────────────────────────────────")
+    else:
+        print("\nNo families yet — register the first user to create one.")
 
-    # Print all family invite codes for reference
-    print("\n── Family Invite Codes ──────────────────")
-    for f in Family.query.all():
-        members = len(f.users)
-        print(f"  {f.name:30s}  Code: {f.invite_code}  ({members} member{'s' if members != 1 else ''})")
-    print("─────────────────────────────────────────")
+    print("\n✅ Database ready.")
+    print("   Start the server: python run.py")
