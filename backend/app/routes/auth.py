@@ -64,8 +64,8 @@ def request_otp():
     '''), {'user_id': user.id, 'code': code, 'expires': expires})
     db.session.commit()
 
-    # CORE MECHANIC: Print OTP to server console
-    logger.info(f"\n" + "="*40 + f"\n[SECURE OTP] {user.name}'s Auth Code: {code}\n" + "="*40)
+    # CORE MECHANIC: Print OTP to server console explicitly
+    print(f"\n" + "="*40 + f"\n[SECURE OTP] {user.name}'s Auth Code: {code}\n" + "="*40, flush=True)
 
     return jsonify({'message': 'If the identifier exists, an OTP has been generated.'}), 200
 
@@ -93,14 +93,14 @@ def verify_otp():
     '''), {'user_id': user.id, 'now': now}).fetchone()
 
     if not otp_record or otp_record.code != otp:
-        logger.warning(f"Failed OTP attempt for {user.name}")
+        print(f"[AUTH WARN] Failed OTP attempt for {user.name}", flush=True)
         return jsonify({'message': 'Invalid identifier or OTP'}), 401
 
     # Successfully verified — delete all OTPs for user and issue JWT
     db.session.execute(db.text("DELETE FROM otp_codes WHERE user_id = :user_id"), {'user_id': user.id})
     db.session.commit()
 
-    logger.info(f"User {user.name} successfully authenticated via OTP.")
+    print(f"[AUTH SUCCESS] User {user.name} successfully authenticated via OTP.", flush=True)
 
     family = Family.query.get(user.family_id)
     return jsonify({
