@@ -124,6 +124,14 @@ def create_app():
             db.session.commit()
         except Exception: pass
 
+        # Fam-Drive Schema Upgrades
+        try:
+            db.session.execute(db.text("ALTER TABLE documents ADD COLUMN size_bytes INTEGER DEFAULT 0"))
+            db.session.execute(db.text("ALTER TABLE documents ADD COLUMN mime_type VARCHAR(100) DEFAULT 'application/octet-stream'"))
+            db.session.execute(db.text("ALTER TABLE documents ADD COLUMN tags VARCHAR(200)"))
+            db.session.commit()
+        except Exception: pass
+
         users_file = os.path.join(app.root_path, '..', 'users.json')
         if os.path.exists(users_file):
             logger.info("Synchronizing static users.json definitions to DB...")

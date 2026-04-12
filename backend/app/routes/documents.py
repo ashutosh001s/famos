@@ -10,30 +10,30 @@ import uuid
 documents_bp = Blueprint('documents', __name__)
 
 import tempfile
+import mimetypes
 
 def get_upload_dir():
-    # Safely targets the base application layer to evade proxy-locked isolated directories
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     upload_folder = os.path.join(base_dir, 'secure_uploads')
     try:
         os.makedirs(upload_folder, exist_ok=True)
         return upload_folder
     except PermissionError:
-        # Failsafe for tightly isolated linux deployments
         fallback = os.path.join(tempfile.gettempdir(), 'famos_secure_uploads')
         os.makedirs(fallback, exist_ok=True)
         return fallback
 
-# Security: only allow known safe file types
-ALLOWED_EXTENSIONS = {
-    'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp',
-    'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv'
+# Security: Fam-Drive blocks explicit executing malware
+BANNED_EXTENSIONS = {
+    'exe', 'sh', 'bat', 'apk', 'msi', 'cmd', 'vbs', 'scr', 'bin'
 }
-MAX_FILE_BYTES = 15 * 1024 * 1024  # 15 MB
-
+USER_QUOTA_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB limit
 
 def _allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    if '.' not in filename:
+        return True # files without extensions allowed
+    ext = filename.rsplit('.', 1)[1].lower()
+    return ext not in BANNED_EXTENSIONS
 
 
 def _safe_file_path(stored_filename):
@@ -46,6 +46,18 @@ def _safe_file_path(stored_filename):
         return None
     return full_path
 
+
+@documents_bp.route('/quota', methods=['GET'])
+@jwt_required()
+def get_quota():
+    user = get_current_user()
+    docs = Document.query.filter_by(user_id=user.id).all()
+    used = sum(d.size_bytes or 0 for d in docs)
+    return jsonify({
+        'used_bytes': used,
+        'limit_bytes': USER_QUOTA_BYTES,
+        'limit_gb': 10
+    }), 200
 
 @documents_bp.route('/', methods=['GET'])
 @jwt_required()
@@ -72,7 +84,9 @@ def get_documents():
         'category': d.category,
         'visibility': d.visibility,
         'upload_date': d.upload_date.isoformat() if d.upload_date else None,
-        'user_id': d.user_id
+        'user_id': d.user_id,
+        'size_bytes': d.size_bytes,
+        'mime_type': d.mime_type
     } for d in docs]), 200
 
 
@@ -90,18 +104,24 @@ def upload_document():
     category = request.form.get('category', 'Other')
     visibility = request.form.get('visibility', 'individual')
 
+    tags = request.form.get('tags', '').strip()
+
     if file.filename == '':
         return jsonify({'message': 'No selected file'}), 400
 
     if not _allowed_file(file.filename):
-        return jsonify({'message': f'File type not allowed. Allowed: {", ".join(sorted(ALLOWED_EXTENSIONS))}'}), 400
+        return jsonify({'message': 'Security Breach: Executable/malicious files are completely forbidden.'}), 400
 
-    # Check file size
-    file.seek(0, 2)  # seek to end
+    # Quota logic
+    user_docs = Document.query.filter_by(user_id=user.id).all()
+    used_space = sum(d.size_bytes or 0 for d in user_docs)
+
+    file.seek(0, 2)
     file_size = file.tell()
-    file.seek(0)     # reset
-    if file_size > MAX_FILE_BYTES:
-        return jsonify({'message': f'File too large (max {MAX_FILE_BYTES // (1024*1024)}MB)'}), 413
+    file.seek(0)
+    
+    if used_space + file_size > USER_QUOTA_BYTES:
+        return jsonify({'message': 'Fam-Drive Storage limit exceeded (10GB max).'}), 413
 
     original_filename = secure_filename(file.filename)
     unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
@@ -110,14 +130,19 @@ def upload_document():
     try:
         file.save(file_path)
 
+        mime_type = file.mimetype or mimetypes.guess_type(original_filename)[0] or 'application/octet-stream'
+
         new_doc = Document(
             user_id=user.id,
             family_id=user.family_id,
-            filename=original_filename,       # human-readable name shown in UI
-            stored_filename=unique_filename,  # safe uuid-prefixed name on disk
-            file_path=unique_filename,        # dummy anchor for old missing sql schema constraint
+            filename=original_filename,
+            stored_filename=unique_filename,
+            file_path=unique_filename,
             category=category,
-            visibility=visibility
+            visibility=visibility,
+            size_bytes=file_size,
+            mime_type=mime_type,
+            tags=tags or None
         )
         db.session.add(new_doc)
         db.session.commit()

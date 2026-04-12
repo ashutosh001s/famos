@@ -102,6 +102,12 @@ def get_summary():
     individual_spent = 0
     breakdown = {}
 
+    from app.models import User
+    members = User.query.filter_by(family_id=user.family_id).all()
+    user_map = {m.id: m.name for m in members}
+
+    member_breakdown = {m.name: 0 for m in members}
+
     for t in transactions:
         if t.type == 'income':
             balance += t.amount
@@ -111,12 +117,16 @@ def get_summary():
             if t.paid_by == user.id:
                 individual_spent += t.amount
             breakdown[t.category] = breakdown.get(t.category, 0) + t.amount
+            
+            p_name = user_map.get(t.paid_by, "Unknown")
+            member_breakdown[p_name] = member_breakdown.get(p_name, 0) + t.amount
 
     return jsonify({
         'balance': round(balance, 2),
         'family_spent': round(family_spent, 2),
         'individual_spent': round(individual_spent, 2),
-        'breakdown': {k: round(v, 2) for k, v in breakdown.items()}
+        'breakdown': {k: round(v, 2) for k, v in breakdown.items()},
+        'member_breakdown': {k: round(v, 2) for k, v in member_breakdown.items()}
     }), 200
 
 
