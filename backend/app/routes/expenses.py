@@ -189,11 +189,14 @@ def generate_statement():
     pdf.set_text_color(*color)
     pdf.cell(0, 10, f"Closing Balance: Rs. {round(balance, 2)}")
 
-    buf = io.BytesIO()
-    pdf.output(buf)
-    buf.seek(0)
+    import tempfile
+    import os
+    fd, path = tempfile.mkstemp(suffix=".pdf")
+    os.close(fd)
+    pdf.output(path)
+    
     return send_file(
-        buf,
+        path,
         as_attachment=True,
         download_name='Family_Statement.pdf',
         mimetype='application/pdf'
