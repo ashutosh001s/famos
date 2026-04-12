@@ -145,7 +145,7 @@ def generate_statement():
     pdf.set_font("helvetica", "B", 20)
     pdf.set_fill_color(25, 118, 210)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 15, "Family Financial Statement", new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
+    pdf.cell(0, 15, "Family Financial Statement", ln=1, align="C", fill=True)
     pdf.ln(5)
 
     # Summary
@@ -154,9 +154,9 @@ def generate_statement():
 
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("helvetica", "", 11)
-    pdf.cell(0, 8, f"Total Balance: Rs. {round(balance, 2)}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Total Family Spending: Rs. {round(family_spent, 2)}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Total Transactions: {len(transactions)}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, f"Total Balance: Rs. {round(balance, 2)}", ln=1)
+    pdf.cell(0, 8, f"Total Family Spending: Rs. {round(family_spent, 2)}", ln=1)
+    pdf.cell(0, 8, f"Total Transactions: {len(transactions)}", ln=1)
     pdf.ln(5)
 
     # Table header
@@ -166,7 +166,7 @@ def generate_statement():
     pdf.cell(45, 10, "Category", border=1, fill=True)
     pdf.cell(35, 10, "Method", border=1, fill=True)
     pdf.cell(35, 10, "Amount", border=1, fill=True)
-    pdf.cell(30, 10, "Type", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(30, 10, "Type", border=1, ln=1, fill=True)
 
     def _s(text):
         if text is None: return ''
@@ -181,7 +181,7 @@ def generate_statement():
         pdf.cell(35, 8, _s(t.payment_method or 'N/A')[:12], border=1, fill=True)
         prefix = "+" if t.type == 'income' else "-"
         pdf.cell(35, 8, f"{prefix} Rs.{t.amount}", border=1, fill=True)
-        pdf.cell(30, 8, t.type.capitalize(), border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(30, 8, t.type.capitalize(), border=1, ln=1, fill=True)
 
     pdf.ln(10)
     pdf.set_font("helvetica", "B", 13)
