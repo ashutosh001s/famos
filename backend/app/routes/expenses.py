@@ -29,6 +29,11 @@ def get_expenses():
         'description': e.description,
         'payment_method': e.payment_method,
         'paid_by': e.paid_by,
+        'for_user_id': e.for_user_id,
+        'receipt_doc_id': e.receipt_doc_id,
+        'location': e.location,
+        'tags': e.tags,
+        'is_recurring': bool(e.is_recurring),
         'date': e.date.isoformat() if e.date else None
     } for e in expenses]), 200
 
@@ -57,6 +62,11 @@ def add_expense():
     exp = Transaction(
         family_id=user.family_id,
         paid_by=user.id,
+        for_user_id=data.get('for_user_id'),
+        receipt_doc_id=data.get('receipt_doc_id'),
+        location=data.get('location', '').strip() or None,
+        tags=data.get('tags', '').strip() or None,
+        is_recurring=bool(data.get('is_recurring', False)),
         type=tx_type,
         amount=float(amount),
         category=category,

@@ -58,11 +58,16 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     family_id = db.Column(db.Integer, db.ForeignKey('families.id'), nullable=False)
     paid_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    for_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    receipt_doc_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=True)
     type = db.Column(db.String(20), default='expense')  # 'income', 'expense'
     amount = db.Column(db.Float, nullable=False)
     category = db.Column(db.String(50), nullable=False)
     description = db.Column(db.String(300), nullable=True)  # Added: notes/description field
     payment_method = db.Column(db.String(50), nullable=True)  # UPI, Cash, Card
+    location = db.Column(db.String(150), nullable=True)
+    tags = db.Column(db.String(200), nullable=True)
+    is_recurring = db.Column(db.Boolean, default=False)
     date = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

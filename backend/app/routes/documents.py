@@ -9,12 +9,20 @@ import uuid
 
 documents_bp = Blueprint('documents', __name__)
 
+import tempfile
+
 def get_upload_dir():
     # Safely targets the base application layer to evade proxy-locked isolated directories
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     upload_folder = os.path.join(base_dir, 'secure_uploads')
-    os.makedirs(upload_folder, exist_ok=True)
-    return upload_folder
+    try:
+        os.makedirs(upload_folder, exist_ok=True)
+        return upload_folder
+    except PermissionError:
+        # Failsafe for tightly isolated linux deployments
+        fallback = os.path.join(tempfile.gettempdir(), 'famos_secure_uploads')
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
 
 # Security: only allow known safe file types
 ALLOWED_EXTENSIONS = {
@@ -99,20 +107,23 @@ def upload_document():
     unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
     file_path = os.path.join(get_upload_dir(), unique_filename)
 
-    file.save(file_path)
+    try:
+        file.save(file_path)
 
-    new_doc = Document(
-        user_id=user.id,
-        family_id=user.family_id,
-        filename=original_filename,       # human-readable name shown in UI
-        stored_filename=unique_filename,  # safe uuid-prefixed name on disk
-        category=category,
-        visibility=visibility
-    )
-    db.session.add(new_doc)
-    db.session.commit()
+        new_doc = Document(
+            user_id=user.id,
+            family_id=user.family_id,
+            filename=original_filename,       # human-readable name shown in UI
+            stored_filename=unique_filename,  # safe uuid-prefixed name on disk
+            category=category,
+            visibility=visibility
+        )
+        db.session.add(new_doc)
+        db.session.commit()
 
-    return jsonify({'message': 'File uploaded successfully', 'id': new_doc.id}), 201
+        return jsonify({'message': 'File uploaded successfully', 'id': new_doc.id}), 201
+    except Exception as e:
+        return jsonify({'message': f'Server Error: {str(e)}'}), 500
 
 
 @documents_bp.route('/<int:doc_id>/download', methods=['GET'])

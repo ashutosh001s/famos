@@ -114,6 +114,16 @@ def create_app():
             db.session.commit()
         except Exception: pass
 
+        # New Transactions Enhancements Core
+        try:
+            db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN for_user_id INTEGER"))
+            db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN receipt_doc_id INTEGER"))
+            db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN location VARCHAR(150)"))
+            db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN tags VARCHAR(200)"))
+            db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN is_recurring BOOLEAN DEFAULT 0"))
+            db.session.commit()
+        except Exception: pass
+
         users_file = os.path.join(app.root_path, '..', 'users.json')
         if os.path.exists(users_file):
             logger.info("Synchronizing static users.json definitions to DB...")
