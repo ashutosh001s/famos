@@ -91,6 +91,7 @@ class Document(db.Model):
     family_id = db.Column(db.Integer, db.ForeignKey('families.id'), nullable=False)
     filename = db.Column(db.String(200), nullable=False)
     stored_filename = db.Column(db.String(300), nullable=False)  # uuid-prefixed safe name
+    file_path = db.Column(db.String(300), nullable=True, default='') # Legacy structural anchor
     category = db.Column(db.String(50), nullable=False)  # Govt ID, Bank Docs, etc.
     visibility = db.Column(db.String(20), default='individual')  # individual or family
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)

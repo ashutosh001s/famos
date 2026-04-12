@@ -115,6 +115,7 @@ def upload_document():
             family_id=user.family_id,
             filename=original_filename,       # human-readable name shown in UI
             stored_filename=unique_filename,  # safe uuid-prefixed name on disk
+            file_path=unique_filename,        # dummy anchor for old missing sql schema constraint
             category=category,
             visibility=visibility
         )
