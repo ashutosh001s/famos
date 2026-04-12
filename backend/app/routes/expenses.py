@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required
 from fpdf import FPDF
 from flask import send_file
 import io
+from datetime import datetime
 
 expenses_bp = Blueprint('expenses', __name__)
 
@@ -134,9 +135,21 @@ def get_summary():
 @jwt_required()
 def generate_statement():
     user = get_current_user()
-    transactions = Transaction.query.filter_by(
-        family_id=user.family_id
-    ).order_by(Transaction.date.asc()).all()
+    
+    start_str = request.args.get('start_date')
+    end_str = request.args.get('end_date')
+
+    query = Transaction.query.filter_by(family_id=user.family_id)
+    if start_str:
+        try: query = query.filter(Transaction.date >= datetime.strptime(start_str, '%Y-%m-%d'))
+        except ValueError: pass
+    if end_str:
+        try:
+            end_parsed = datetime.strptime(end_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+            query = query.filter(Transaction.date <= end_parsed)
+        except ValueError: pass
+
+    transactions = query.order_by(Transaction.date.asc()).all()
 
     pdf = FPDF()
     pdf.add_page()
@@ -145,7 +158,12 @@ def generate_statement():
     pdf.set_font("helvetica", "B", 20)
     pdf.set_fill_color(25, 118, 210)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 15, "Family Financial Statement", ln=1, align="C", fill=True)
+    
+    title = "Family Financial Statement"
+    if start_str and end_str: title = f"Statement ({start_str} to {end_str})"
+    elif start_str: title = f"Statement (From {start_str})"
+
+    pdf.cell(0, 15, title, ln=1, align="C", fill=True)
     pdf.ln(5)
 
     # Summary
