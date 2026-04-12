@@ -148,13 +148,17 @@ def generate_statement():
     pdf.cell(35, 10, "Amount", border=1, fill=True)
     pdf.cell(30, 10, "Type", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
 
+    def _s(text):
+        if text is None: return ''
+        return str(text).encode('latin-1', 'replace').decode('latin-1')
+
     pdf.set_font("helvetica", "", 9)
     for t in transactions:
         row_color = (240, 255, 240) if t.type == 'income' else (255, 245, 245)
         pdf.set_fill_color(*row_color)
         pdf.cell(35, 8, t.date.strftime("%Y-%m-%d"), border=1, fill=True)
-        pdf.cell(45, 8, (t.category or '')[:20], border=1, fill=True)
-        pdf.cell(35, 8, (t.payment_method or 'N/A')[:12], border=1, fill=True)
+        pdf.cell(45, 8, _s(t.category)[:20], border=1, fill=True)
+        pdf.cell(35, 8, _s(t.payment_method or 'N/A')[:12], border=1, fill=True)
         prefix = "+" if t.type == 'income' else "-"
         pdf.cell(35, 8, f"{prefix} Rs.{t.amount}", border=1, fill=True)
         pdf.cell(30, 8, t.type.capitalize(), border=1, fill=True, new_x="LMARGIN", new_y="NEXT")

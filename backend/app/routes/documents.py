@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, current_app
 from app import db
 from app.models import Document
 from app.routes.auth import get_current_user
@@ -9,13 +9,11 @@ import uuid
 
 documents_bp = Blueprint('documents', __name__)
 
-# Pin upload folder relative to this file to avoid Gunicorn getcwd inconsistency
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'secure_uploads')
-if not os.path.exists(UPLOAD_FOLDER):
-    try:
-        os.makedirs(UPLOAD_FOLDER)
-    except Exception: pass
+def get_upload_dir():
+    # Safely targets the guaranteed writable instance directory for persisted uploads without 500ing
+    upload_folder = os.path.join(current_app.instance_path, 'secure_uploads')
+    os.makedirs(upload_folder, exist_ok=True)
+    return upload_folder
 
 # Security: only allow known safe file types
 ALLOWED_EXTENSIONS = {
@@ -32,9 +30,10 @@ def _allowed_file(filename):
 def _safe_file_path(stored_filename):
     """Reconstruct path from stored filename, guarding against traversal."""
     safe_name = os.path.basename(stored_filename)
-    full_path = os.path.join(UPLOAD_FOLDER, safe_name)
-    # Ensure the resolved path is still inside UPLOAD_FOLDER
-    if not os.path.abspath(full_path).startswith(os.path.abspath(UPLOAD_FOLDER)):
+    upload_dir = get_upload_dir()
+    full_path = os.path.join(upload_dir, safe_name)
+    # Ensure the resolved path is still inside upload_dir
+    if not os.path.abspath(full_path).startswith(os.path.abspath(upload_dir)):
         return None
     return full_path
 
@@ -96,9 +95,8 @@ def upload_document():
         return jsonify({'message': f'File too large (max {MAX_FILE_BYTES // (1024*1024)}MB)'}), 413
 
     original_filename = secure_filename(file.filename)
-    unique_id = str(uuid.uuid4())
-    stored_filename = f"{unique_id}_{original_filename}"
-    file_path = os.path.join(UPLOAD_FOLDER, stored_filename)
+    unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
+    file_path = os.path.join(get_upload_dir(), unique_filename)
 
     file.save(file_path)
 
@@ -106,7 +104,7 @@ def upload_document():
         user_id=user.id,
         family_id=user.family_id,
         filename=original_filename,       # human-readable name shown in UI
-        stored_filename=stored_filename,  # safe uuid-prefixed name on disk
+        stored_filename=unique_filename,  # safe uuid-prefixed name on disk
         category=category,
         visibility=visibility
     )
