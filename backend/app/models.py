@@ -35,6 +35,7 @@ class Task(db.Model):
     description = db.Column(db.Text, nullable=True)
     priority = db.Column(db.String(20), default='medium')
     status = db.Column(db.String(20), default='pending')
+    requires_transaction = db.Column(db.Boolean, default=False)
     due_date = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -46,6 +47,7 @@ class Grocery(db.Model):
     added_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     quantity = db.Column(db.Integer, default=1)
+    unit = db.Column(db.String(20), default='')
     category = db.Column(db.String(50), default='Other')
     status = db.Column(db.String(20), default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

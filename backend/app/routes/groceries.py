@@ -29,6 +29,7 @@ def get_groceries():
         'id': g.id,
         'name': g.name,
         'quantity': g.quantity,
+        'unit': g.unit,
         'category': g.category,
         'status': g.status,
         'added_by': g.added_by,
@@ -58,6 +59,7 @@ def add_grocery():
         added_by=user.id,
         name=data.get('name').strip(),
         quantity=quantity,
+        unit=str(data.get('unit', '')).strip()[:20],
         category=data.get('category', 'Other')
     )
     db.session.add(item)

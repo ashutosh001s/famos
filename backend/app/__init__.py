@@ -109,6 +109,11 @@ def create_app():
             db.session.commit()
         except Exception: pass
 
+        try:
+            db.session.execute(db.text("ALTER TABLE groceries ADD COLUMN unit VARCHAR(20) DEFAULT ''"))
+            db.session.commit()
+        except Exception: pass
+
         users_file = os.path.join(app.root_path, '..', 'users.json')
         if os.path.exists(users_file):
             logger.info("Synchronizing static users.json definitions to DB...")
