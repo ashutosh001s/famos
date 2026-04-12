@@ -27,7 +27,7 @@ def get_upload_dir():
 BANNED_EXTENSIONS = {
     'exe', 'sh', 'bat', 'apk', 'msi', 'cmd', 'vbs', 'scr', 'bin'
 }
-USER_QUOTA_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB limit
+USER_QUOTA_BYTES = 50 * 1024 * 1024 * 1024  # 50 GB limit
 
 def _allowed_file(filename):
     if '.' not in filename:
@@ -56,7 +56,7 @@ def get_quota():
     return jsonify({
         'used_bytes': used,
         'limit_bytes': USER_QUOTA_BYTES,
-        'limit_gb': 10
+        'limit_gb': 50
     }), 200
 
 @documents_bp.route('/', methods=['GET'])
@@ -121,7 +121,7 @@ def upload_document():
     file.seek(0)
     
     if used_space + file_size > USER_QUOTA_BYTES:
-        return jsonify({'message': 'Fam-Drive Storage limit exceeded (10GB max).'}), 413
+        return jsonify({'message': 'Fam-Drive Storage limit exceeded (50GB max).'}), 413
 
     original_filename = secure_filename(file.filename)
     unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
