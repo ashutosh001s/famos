@@ -100,6 +100,11 @@ def create_app():
         except Exception: pass
 
         try:
+            db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN requires_transaction BOOLEAN DEFAULT 0"))
+            db.session.commit()
+        except Exception: pass
+
+        try:
             db.session.execute(db.text("ALTER TABLE documents ADD COLUMN visibility VARCHAR(20) DEFAULT 'individual'"))
             db.session.commit()
         except Exception: pass
@@ -169,10 +174,9 @@ def create_app():
     @app.route('/health')
     def health():
         try:
-            from app.models import User
-            users = User.query.all()
-            user_data = [{"id": u.id, "name": u.name, "phone_hash": u.phone_hash} for u in users]
-            return jsonify({'status': 'ok', 'db': 'connected', 'users': user_data}), 200
+            # Touch the DB to ensure viability without rendering private records
+            db.session.execute(db.text('SELECT 1'))
+            return jsonify({'status': 'ok', 'db': 'connected', 'info': 'System operational and secured.'}), 200
         except Exception as e:
             return jsonify({'status': 'error', 'db': str(e)}), 503
 

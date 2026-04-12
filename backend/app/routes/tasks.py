@@ -38,6 +38,7 @@ def get_tasks():
         'priority': t.priority,
         'status': t.status,
         'due_date': t.due_date.isoformat() if t.due_date else None,
+        'requires_transaction': bool(t.requires_transaction),
         'assigned_to': t.assigned_to,
         'assigned_to_name': user_map.get(t.assigned_to),
         'created_by': t.created_by,
@@ -78,6 +79,7 @@ def add_task():
         title=data.get('title').strip(),
         description=data.get('description', '').strip(),
         priority=data.get('priority', 'medium'),
+        requires_transaction=bool(data.get('requires_transaction', False)),
         due_date=due_date
     )
     db.session.add(task)
