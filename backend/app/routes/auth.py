@@ -123,9 +123,26 @@ def get_family_members():
     if not user or not user.family_id:
         return jsonify([]), 200
     members = User.query.filter_by(family_id=user.family_id).all()
-    # Read-only API map
     return jsonify([{
         'id': m.id,
         'name': m.name,
-        'role': m.role
+        'role': m.role,
+        'last_seen': m.last_seen.isoformat() if m.last_seen else None
     } for m in members]), 200
+
+# ── Update Presence & Push Token ──────────────────────────────
+@auth_bp.route('/presence', methods=['POST'])
+@jwt_required()
+def update_presence():
+    user = get_current_user()
+    if not user:
+        return jsonify({'message': 'Unauthorized'}), 401
+    
+    data = request.get_json() or {}
+    if 'expo_push_token' in data and data['expo_push_token']:
+        user.expo_push_token = data['expo_push_token']
+        
+    user.last_seen = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({'status': 'active'}), 200

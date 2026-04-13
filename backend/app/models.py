@@ -23,6 +23,18 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=True)
     password_hash = db.Column(db.String(128), nullable=True)
     role = db.Column(db.String(20), default='member')  # 'admin' or 'member'
+    expo_push_token = db.Column(db.String(255), nullable=True)
+    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ChatMessage(db.Model):
+    __tablename__ = 'chat_messages'
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('families.id'), nullable=False)
+    sender_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    message_type = db.Column(db.String(20), default='text') # 'text', 'file', 'alert'
+    content = db.Column(db.Text, nullable=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class Task(db.Model):

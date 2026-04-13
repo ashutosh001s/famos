@@ -3,6 +3,7 @@ from app import db
 from app.models import Grocery, User
 from app.routes.auth import get_current_user
 from flask_jwt_extended import jwt_required
+from app.routes.chat import auto_alert
 
 groceries_bp = Blueprint('groceries', __name__)
 
@@ -78,7 +79,10 @@ def update_grocery(item_id):
     data = request.get_json() or {}  # Fixed: guard against None body
 
     if 'status' in data:
+        old_status = item.status
         item.status = data['status']
+        if old_status != 'bought' and item.status == 'bought':
+             auto_alert(user.family_id, user.name, f"bought: {item.name}")
     if 'quantity' in data:
         try:
             item.quantity = max(1, int(data['quantity']))

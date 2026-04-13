@@ -4,6 +4,7 @@ from app.models import Task, User
 from app.routes.auth import get_current_user
 from flask_jwt_extended import jwt_required
 from datetime import datetime
+from app.routes.chat import auto_alert
 
 tasks_bp = Blueprint('tasks', __name__)
 
@@ -98,7 +99,10 @@ def update_task(task_id):
     data = request.get_json() or {}  # Fixed: guard against None body
 
     if 'status' in data:
+        old_status = task.status
         task.status = data['status']
+        if old_status != 'completed' and task.status == 'completed':
+            auto_alert(user.family_id, user.name, f"completed the task: {task.title}")
     if 'priority' in data:
         task.priority = data['priority']
     if 'title' in data:

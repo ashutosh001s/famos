@@ -132,6 +132,33 @@ def create_app():
             db.session.commit()
         except Exception: pass
 
+        # Chat & Push Tracking Schema Upgrades
+        try:
+            db.session.execute(db.text("ALTER TABLE users ADD COLUMN expo_push_token VARCHAR(255)"))
+            db.session.commit()
+        except Exception: pass
+
+        try:
+            db.session.execute(db.text("ALTER TABLE users ADD COLUMN last_seen DATETIME"))
+            db.session.commit()
+        except Exception: pass
+
+        try:
+            db.session.execute(db.text('''
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    family_id INTEGER NOT NULL REFERENCES families(id),
+                    sender_id INTEGER REFERENCES users(id),
+                    message_type VARCHAR(20) DEFAULT 'text',
+                    content TEXT,
+                    document_id INTEGER REFERENCES documents(id),
+                    created_at DATETIME
+                )
+            '''))
+            db.session.commit()
+        except Exception as e:
+            logger.error(f"Failed configuring chat tables: {e}")
+
         users_file = os.path.join(app.root_path, '..', 'users.json')
         if os.path.exists(users_file):
             logger.info("Synchronizing static users.json definitions to DB...")
@@ -184,6 +211,7 @@ def create_app():
     from app.routes.documents import documents_bp
     from app.routes.summary import summary_bp
     from app.routes.webhook import webhook_bp
+    from app.routes.chat import chat_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(tasks_bp, url_prefix='/api/tasks')
@@ -193,6 +221,7 @@ def create_app():
     app.register_blueprint(documents_bp, url_prefix='/api/documents')
     app.register_blueprint(summary_bp, url_prefix='/api/summary')
     app.register_blueprint(webhook_bp, url_prefix='/webhook')
+    app.register_blueprint(chat_bp, url_prefix='/api/chat')
 
     @app.route('/health')
     def health():
