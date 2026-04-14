@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from app import db
 from app.models import Transaction
 from flask_jwt_extended import jwt_required
+from app.routes.auth import get_current_user
 from app.routes.chat import auto_alert
 from fpdf import FPDF
 from flask import send_file

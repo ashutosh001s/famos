@@ -34,6 +34,14 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'CHANGE-ME-in-dotenv')
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)  # Reverted back to 30 days for personal UX
+    
+    if db_uri.startswith('sqlite'):
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'connect_args': {
+                'check_same_thread': False,
+                'timeout': 15,
+            }
+        }
 
     # Lock CORS to known frontend origins
     allowed_origins = os.getenv(
@@ -55,6 +63,13 @@ def create_app():
     limiter.init_app(app)
 
     with app.app_context():
+        if db_uri.startswith('sqlite'):
+            # Force WAL mode for aggressive concurrent read/writes mapping back to native hardware
+            from sqlalchemy import text
+            with db.engine.connect() as conn:
+                conn.execute(text('PRAGMA journal_mode=WAL;'))
+                conn.execute(text('PRAGMA synchronous=NORMAL;'))
+        
         # Setup OTP temp table dynamically so we don't need manual alembic migrations for just this memory state.
         try:
             db.session.execute(db.text('''
