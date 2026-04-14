@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify
 from app import db
 from app.models import Transaction
-from app.routes.auth import get_current_user
 from flask_jwt_extended import jwt_required
+from app.routes.chat import auto_alert
 from fpdf import FPDF
 from flask import send_file
 import io
@@ -68,15 +68,16 @@ def add_expense():
         location=data.get('location', '').strip() or None,
         tags=data.get('tags', '').strip() or None,
         is_recurring=bool(data.get('is_recurring', False)),
-        type=tx_type,
+        type=trans_type,
         amount=float(amount),
         category=category,
         description=data.get('description', '').strip() or None,
         payment_method=data.get('payment_method')
     )
-    db.session.add(exp)
+    db.session.add(transaction)
     db.session.commit()
-    return jsonify({'message': 'Transaction logged', 'id': exp.id}), 201
+    auto_alert(user.family_id, user.name, f"added a {trans_type} transaction: ₹{amount}")
+    return jsonify({'message': 'Transaction added successfully', 'id': transaction.id}), 201
 
 
 @expenses_bp.route('/<int:tx_id>', methods=['DELETE'])

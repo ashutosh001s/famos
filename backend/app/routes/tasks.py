@@ -85,6 +85,7 @@ def add_task():
     )
     db.session.add(task)
     db.session.commit()
+    auto_alert(user.family_id, user.name, f"created the task: {task.title}")
     return jsonify({'message': 'Task created!', 'id': task.id}), 201
 
 

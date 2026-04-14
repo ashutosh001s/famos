@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, send_file, current_app
 from app import db
 from app.models import Document
 from app.routes.auth import get_current_user
+from app.routes.chat import auto_alert
 from flask_jwt_extended import jwt_required
 import os
 from werkzeug.utils import secure_filename
@@ -146,6 +147,9 @@ def upload_document():
         )
         db.session.add(new_doc)
         db.session.commit()
+
+        if category != 'Other' or tags != 'chat_media':
+            auto_alert(user.family_id, user.name, f"uploaded a new document: {original_filename}")
 
         return jsonify({'message': 'File uploaded successfully', 'id': new_doc.id}), 201
     except Exception as e:

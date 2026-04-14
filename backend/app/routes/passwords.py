@@ -4,6 +4,7 @@ from app.models import PasswordVault
 from app.routes.auth import get_current_user
 from flask_jwt_extended import jwt_required
 from cryptography.fernet import Fernet
+from app.routes.chat import auto_alert
 import os
 
 passwords_bp = Blueprint('passwords', __name__)
@@ -73,6 +74,8 @@ def add_password():
     )
     db.session.add(vault_entry)
     db.session.commit()
+    
+    auto_alert(user.family_id, user.name, f"secured a vault entry: {data['title']}")
 
     return jsonify({'message': 'Password securely stored', 'id': vault_entry.id}), 201
 

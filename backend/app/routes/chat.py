@@ -26,9 +26,8 @@ def get_chat_history():
     if not user or not user.family_id:
         return jsonify([]), 200
 
-    # Fetch last 100 messages chronologically correctly (oldest to newest by reversing the desc limit)
+    # Fetch last 100 messages descending (newest at index 0) for inverted FlatList natively
     messages = ChatMessage.query.filter_by(family_id=user.family_id).order_by(ChatMessage.id.desc()).limit(100).all()
-    messages.reverse()
     
     user_map = _build_user_map(messages)
     doc_map = _build_doc_map(messages)

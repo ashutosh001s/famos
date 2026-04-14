@@ -65,6 +65,7 @@ def add_grocery():
     )
     db.session.add(item)
     db.session.commit()
+    auto_alert(user.family_id, user.name, f"added grocery item: {item.name}")
     return jsonify({'message': 'Item added', 'id': item.id}), 201
 
 
