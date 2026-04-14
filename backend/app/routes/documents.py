@@ -176,6 +176,22 @@ def download_document(doc_id):
     return send_file(safe_path, as_attachment=True, download_name=doc.filename)
 
 
+@documents_bp.route('/<int:doc_id>/visibility', methods=['PATCH'])
+@jwt_required()
+def update_visibility(doc_id):
+    user = get_current_user()
+    doc = Document.query.filter_by(id=doc_id, user_id=user.id).first()
+    if not doc:
+        return jsonify({'message': 'Document not found or unauthorized'}), 404
+
+    data = request.get_json() or {}
+    new_vis = data.get('visibility')
+    if new_vis in ['individual', 'family']:
+        doc.visibility = new_vis
+        db.session.commit()
+        return jsonify({'message': 'Visibility updated'}), 200
+    return jsonify({'message': 'Invalid visibility'}), 400
+
 @documents_bp.route('/<int:doc_id>', methods=['DELETE'])
 @jwt_required()
 def delete_document(doc_id):
