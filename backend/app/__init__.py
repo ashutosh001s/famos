@@ -35,6 +35,8 @@ def create_app():
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'CHANGE-ME-in-dotenv')
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)  # Reverted back to 30 days for personal UX
     
+    app.config['MAX_CONTENT_LENGTH'] = None # Allow massive Multi-GB File Uploads natively
+
     if db_uri.startswith('sqlite'):
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
             'connect_args': {

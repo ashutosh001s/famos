@@ -157,8 +157,14 @@ def upload_document():
 
 
 @documents_bp.route('/<int:doc_id>/download', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def download_document(doc_id):
+    from flask_jwt_extended import verify_jwt_in_request
+    try:
+        verify_jwt_in_request(locations=['headers', 'query_string'])
+    except Exception:
+        return jsonify({'message': 'Missing or invalid token'}), 401
+
     user = get_current_user()
     doc = Document.query.filter_by(id=doc_id, family_id=user.family_id).first()
 
