@@ -74,14 +74,24 @@ def create_app():
         
         # Setup OTP temp table dynamically so we don't need manual alembic migrations for just this memory state.
         try:
-            db.session.execute(db.text('''
-                CREATE TABLE IF NOT EXISTS otp_codes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    code VARCHAR(6) NOT NULL,
-                    expires_at DATETIME NOT NULL
-                )
-            '''))
+            if db_uri.startswith('sqlite'):
+                db.session.execute(db.text('''
+                    CREATE TABLE IF NOT EXISTS otp_codes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        code VARCHAR(6) NOT NULL,
+                        expires_at DATETIME NOT NULL
+                    )
+                '''))
+            else:
+                db.session.execute(db.text('''
+                    CREATE TABLE IF NOT EXISTS otp_codes (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        code VARCHAR(6) NOT NULL,
+                        expires_at TIMESTAMP NOT NULL
+                    )
+                '''))
             db.session.commit()
         except Exception as e:
             logger.error(f"Failed configuring OTP memory table: {e}")
@@ -117,7 +127,10 @@ def create_app():
         except Exception: pass
 
         try:
-            db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN requires_transaction BOOLEAN DEFAULT 0"))
+            if db_uri.startswith('sqlite'):
+                db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN requires_transaction BOOLEAN DEFAULT 0"))
+            else:
+                db.session.execute(db.text("ALTER TABLE tasks ADD COLUMN requires_transaction BOOLEAN DEFAULT FALSE"))
             db.session.commit()
         except Exception: pass
 
@@ -131,13 +144,15 @@ def create_app():
             db.session.commit()
         except Exception: pass
 
-        # New Transactions Enhancements Core
         try:
             db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN for_user_id INTEGER"))
             db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN receipt_doc_id INTEGER"))
             db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN location VARCHAR(150)"))
             db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN tags VARCHAR(200)"))
-            db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN is_recurring BOOLEAN DEFAULT 0"))
+            if db_uri.startswith('sqlite'):
+                db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN is_recurring BOOLEAN DEFAULT 0"))
+            else:
+                db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN is_recurring BOOLEAN DEFAULT FALSE"))
             db.session.commit()
         except Exception: pass
 
@@ -161,17 +176,30 @@ def create_app():
         except Exception: pass
 
         try:
-            db.session.execute(db.text('''
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    family_id INTEGER NOT NULL REFERENCES families(id),
-                    sender_id INTEGER REFERENCES users(id),
-                    message_type VARCHAR(20) DEFAULT 'text',
-                    content TEXT,
-                    document_id INTEGER REFERENCES documents(id),
-                    created_at DATETIME
-                )
-            '''))
+            if db_uri.startswith('sqlite'):
+                db.session.execute(db.text('''
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        family_id INTEGER NOT NULL REFERENCES families(id),
+                        sender_id INTEGER REFERENCES users(id),
+                        message_type VARCHAR(20) DEFAULT 'text',
+                        content TEXT,
+                        document_id INTEGER REFERENCES documents(id),
+                        created_at DATETIME
+                    )
+                '''))
+            else:
+                db.session.execute(db.text('''
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        id SERIAL PRIMARY KEY,
+                        family_id INTEGER NOT NULL REFERENCES families(id),
+                        sender_id INTEGER REFERENCES users(id),
+                        message_type VARCHAR(20) DEFAULT 'text',
+                        content TEXT,
+                        document_id INTEGER REFERENCES documents(id),
+                        created_at TIMESTAMP
+                    )
+                '''))
             db.session.commit()
         except Exception as e:
             logger.error(f"Failed configuring chat tables: {e}")
@@ -215,8 +243,17 @@ def create_app():
                         user.role = u_data.get('role', user.role)
                         user.family_id = family.id
                 db.session.commit()
+                if not db_uri.startswith('sqlite'):
+                    try:
+                        # Reset all sequences as migration breaks them
+                        tables = ['users', 'families', 'tasks', 'groceries', 'transactions', 'password_vault', 'documents', 'chat_messages']
+                        for table in tables:
+                            db.session.execute(db.text(f"SELECT setval('{table}_id_seq', COALESCE((SELECT MAX(id) FROM {table}), 1))"))
+                        db.session.commit()
+                    except Exception as e:
+                        logger.warning(f"Could not update sequences for tables: {e}")
             except Exception as e:
-                logger.error(f"Failed to sync users.json: {e}")
+                logger.error(f"Failed to sync users.json/sequences: {e}")
         else:
             logger.warning("No users.json found in root. Cannot synchronize identities.")
 
