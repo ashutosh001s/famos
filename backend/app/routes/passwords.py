@@ -75,7 +75,7 @@ def add_password():
     db.session.add(vault_entry)
     db.session.commit()
     
-    auto_alert(user.family_id, user.name, f"secured a vault entry: {data['title']}")
+    auto_alert(user.family_id, user.name, "secured a new vault entry")  # No title — vault is private
 
     return jsonify({'message': 'Password securely stored', 'id': vault_entry.id}), 201
 

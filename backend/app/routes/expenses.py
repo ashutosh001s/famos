@@ -69,16 +69,16 @@ def add_expense():
         location=data.get('location', '').strip() or None,
         tags=data.get('tags', '').strip() or None,
         is_recurring=bool(data.get('is_recurring', False)),
-        type=trans_type,
+        type=tx_type,
         amount=float(amount),
         category=category,
         description=data.get('description', '').strip() or None,
         payment_method=data.get('payment_method')
     )
-    db.session.add(transaction)
+    db.session.add(exp)
     db.session.commit()
-    auto_alert(user.family_id, user.name, f"added a {trans_type} transaction: ₹{amount}")
-    return jsonify({'message': 'Transaction added successfully', 'id': transaction.id}), 201
+    auto_alert(user.family_id, user.name, f"added a {tx_type} transaction: ₹{amount}")
+    return jsonify({'message': 'Transaction added successfully', 'id': exp.id}), 201
 
 
 @expenses_bp.route('/<int:tx_id>', methods=['DELETE'])
@@ -214,9 +214,18 @@ def generate_statement():
     fd, path = tempfile.mkstemp(suffix=".pdf")
     os.close(fd)
     pdf.output(path)
-    
+
+    # Read into memory so we can delete the temp file immediately
+    with open(path, 'rb') as f:
+        pdf_bytes = f.read()
+    try:
+        os.remove(path)
+    except Exception:
+        pass
+
+    from io import BytesIO
     return send_file(
-        path,
+        BytesIO(pdf_bytes),
         as_attachment=True,
         download_name='Family_Statement.pdf',
         mimetype='application/pdf'

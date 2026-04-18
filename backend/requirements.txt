@@ -11,3 +11,5 @@ Werkzeug==3.0.3
 fpdf2==2.7.9
 cryptography==42.0.8
 psycopg2-binary==2.9.9
+APScheduler==3.10.4
+requests==2.31.0
